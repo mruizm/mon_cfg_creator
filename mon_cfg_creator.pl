@@ -62,6 +62,10 @@ my $script_perfmon_tmp = $script_path."/tmp/perfmon";
 my $script_perfmon_log_file_path = $script_path."/log/perfmon/perfmon_cfg_push.log.$datetime_stamp";
 
 my @array_to_eventmon_cfg = ();
+my $script_eventmon_created_cfgs = $script_path."/cfg/eventmon";
+my $script_eventmon_template_cfgs = $script_path."/templates/eventmon";
+my $script_eventmon_tmp = $script_path."/tmp/eventmon";
+my $script_eventmon_log_file_path = $script_path."/log/perfmon/eventmon_cfg_push.log.$datetime_stamp";
 #my $r = 0;
 
 # If -f and -m options are not defined
@@ -992,4 +996,70 @@ sub create_dir_routine
 	{
     return 0;
 	}
+}
+
+######################################################################
+# Sub that checks if a managed node is within a HPOM and if found determine its ip_address, node_net_type, mach_type
+#	@Parms:
+#		$nodename : Nodename to check
+#	Return:
+#		@node_mach_type_ip_addr = (node_exists, node_ip_address, node_net_type, node_mach_type, comm_type)	:
+#															[0|1],
+#															[<ip_addr>],
+#															[NETWORK_NO_NODE|NETWORK_IP|NETWORK_OTHER|NETWORK_UNKNOWN|PATTERN_IP_ADDR|PATTERN_IP_NAME|PATTERN_OTHER],
+#															[MACH_BBC_LX26|MACH_BBC_SOL|MACH_BBC_HPUX|MACH_BBC_AIX|MACH_BBC_WIN|MACH_BBC_OTHER],
+#                             [COMM_UNSPEC_COMM|COMM_BBC]
+#		$node_mach_type_ip_addr[0] = 0: If nodename is not found within HPOM
+#   $node_mach_type_ip_addr[0] = 1: If nodename is found within HPOM
+######################################################################
+sub check_node_in_HPOM
+{
+  my $nodename = shift;
+	my $nodename_exists = 0;
+	my @node_mach_type_ip_addr = ();
+	my ($node_ip_address, $node_mach_type, $node_net_type, $node_comm_type) = ("", "", "", "");
+	my @opcnode_out = qx{opcnode -list_nodes node_list=$nodename};
+	foreach my $opnode_line_out (@opcnode_out)
+	{
+		chomp($opnode_line_out);
+		if ($opnode_line_out =~ /^Name/)
+		{
+			$nodename_exists = 1;					# change to 0 if node is found
+      push (@node_mach_type_ip_addr, $nodename_exists);
+		}
+		if ($opnode_line_out =~ m/IP-Address/)
+		{
+			$opnode_line_out =~ m/.*=\s(.*)/;
+			$node_ip_address = $1;
+			chomp($node_ip_address);
+			push (@node_mach_type_ip_addr, $node_ip_address);
+		}
+		if ($opnode_line_out =~ m/Network\s+Type/)
+		{
+			$opnode_line_out =~ m/.*=\s(.*)/;
+			$node_net_type = $1;
+			chomp($node_net_type);
+			push (@node_mach_type_ip_addr, $node_net_type);
+		}
+		if ($opnode_line_out =~ m/MACH_BBC_LX26|MACH_BBC_SOL|MACH_BBC_HPUX|MACH_BBC_AIX|MACH_BBC_WIN|MACH_BBC_OTHER/)
+		{
+			$opnode_line_out =~ m/.*=\s(.*)/;
+			$node_mach_type = $1;
+			chomp($node_mach_type);
+			push (@node_mach_type_ip_addr, $node_mach_type);
+		}
+    if ($opnode_line_out =~ m/Comm\s+Type/)
+    {
+      $opnode_line_out =~ m/.*=\s(.*)/;
+			$node_comm_type = $1;
+			chomp($node_comm_type);
+			push (@node_mach_type_ip_addr, $node_comm_type);
+    }
+	}
+	# Nodename not found
+	if ($nodename_exists eq 0)
+	{
+		$node_mach_type_ip_addr[0] = 0;
+	}
+  return @node_mach_type_ip_addr;
 }
