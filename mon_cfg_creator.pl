@@ -28,6 +28,7 @@
 # /opt/perf/bin/agsysdb -actions always
 # ovpa restart alarm
 #111111 Warning/222222 Error
+#perl mon_cfg_creator.pl -f cma.lst -m event_mon -d -v
 use warnings;
 use strict;
 use Getopt::Std;
@@ -52,6 +53,7 @@ my $verbose_flag = "0";
 my @array_to_dfmon_cfg = ();
 my $script_dfmon_created_cfgs = $script_path."/cfg/dfmon";
 my $script_dfmon_template_cfgs = $script_path."/templates/dfmon";
+my $script_dfmon_tmp = $script_path."/tmp/dfmon";
 my $script_dfmon_log_file_path = $script_path."/log/dfmon/dfmon_cfg_push.log.$datetime_stamp";
 
 # Variables for perfmon module
@@ -61,11 +63,11 @@ my $script_perfmon_template_cfgs = $script_path."/templates/perfmon";
 my $script_perfmon_tmp = $script_path."/tmp/perfmon";
 my $script_perfmon_log_file_path = $script_path."/log/perfmon/perfmon_cfg_push.log.$datetime_stamp";
 
-my @array_to_eventmon_cfg = ();
-my $script_eventmon_created_cfgs = $script_path."/cfg/eventmon";
-my $script_eventmon_template_cfgs = $script_path."/templates/eventmon";
-my $script_eventmon_tmp = $script_path."/tmp/eventmon";
-my $script_eventmon_log_file_path = $script_path."/log/perfmon/eventmon_cfg_push.log.$datetime_stamp";
+my @array_to_event_mon_cfg = ();
+my $script_event_mon_created_cfgs = $script_path."/cfg/event_mon";
+my $script_event_mon_template_cfgs = $script_path."/templates/event_mon";
+my $script_event_mon_tmp = $script_path."/tmp/event_mon";
+my $script_event_mon_log_file_path = $script_path."/log/event_mon/event_mon_cfg_push.log.$datetime_stamp";
 #my $r = 0;
 
 # If -f and -m options are not defined
@@ -125,8 +127,9 @@ while (<FSCSV>)
   }
   if ($modules_to_cfg eq "event_mon")
   {
-    @array_to_eventmon_cfg = parse_csv_to_array($_);
-    print Dumper @array_to_eventmon_cfg;
+    @array_to_event_mon_cfg = parse_csv_to_array($_);
+    ##print Dumper @array_to_eventmon_cfg;
+    array_element_to_event_mon_cfg($script_event_mon_template_cfgs, $script_event_mon_created_cfgs, \@array_to_event_mon_cfg, $deploy_flag, $datetime_stamp, $script_event_mon_log_file_path, $verbose_flag)
   }
   local $| = 1;
   #for (my $i = 5; $i >= 0; $i--)
@@ -218,217 +221,10 @@ sub parse_csv_to_array
 }
 
 ################################################################################
-# Sub name:     array_element_to_dfmon_cfg
-# Description:  sub that change array value into df_mon.cfg syntax lines and then
-#               saves lines to df_mon.cfg
-# Parms:        df_mon_template_dir, array string value, deploy_flag, date_and_time, $script_log_file_path
-# Return:       None
+#                                                                              #
 ################################################################################
-sub array_element_to_dfmon_cfg
-{
-  my ($df_mon_template_dir, $df_mon_cfg_dir, $array_with_dfmon_parms, $deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
-  #Dereference array and extracts nodename
-  my $node_name = shift @{$array_with_dfmon_parms};
-  #Dereference array and extracts node os
-  my $node_os = lc(shift @{$array_with_dfmon_parms});
-  chomp($deploy_flag);
-  my $current_cfg_line = "";
-  my $array_index_counter = 0;
-  my $cma_parameter = "";
-  my $fs_def = "";
-  my $alert_def = "";
-  my @array_of_alert_def =
-  my $separated_severity_def = "";
-  my $separated_threshold_def = "";
-  my $separated_threshold_currency = "";
-  my $dfmon_cfg_filename = $df_mon_cfg_dir."/"."df_mon.cfg.".$node_name.".".$node_os;
-  my $dfmon_template_file = "";
-  my $ssl_to_node_result = "";
-  my $dfmoncfg_exists_in_path = "";
-  my $cfg_prefered_path = "";
-  my $check_nodes_prefered_path = "";
-  my $rename_file_routine_result = "";
-  print "\nProcessing node: $node_name - OS: $node_os\n" if (!defined $opts{v});
-  print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
-  print "CFG filename: $dfmon_cfg_filename\n" if (defined $opts{v});
-
-  #Based on node's OS, define which df_mon.cfg template file to use
-  #If node is unix
-  if ($node_os eq "unix")
-  {
-      $dfmon_template_file = $df_mon_template_dir."/"."df_mon.cfg.unix";
-      $cfg_prefered_path = "/var/opt/OV/conf/OpC";
-  }
-  #If node is win
-  if ($node_os eq "win")
-  {
-    $dfmon_template_file = $df_mon_template_dir."/"."df_mon.cfg.win";
-    $cfg_prefered_path = 'c:\osit\etc';
-    #print "$dfmon_cfg_prefered_path\n";
-  }
-  #Make a copy of the df_mon.cfg template file for the processed managed based on OS
-  print "Creating file $dfmon_cfg_filename\n" if (!defined $opts{v});
-  open(WRITE_DFMON, '>', $dfmon_cfg_filename);
-  if (open(TEMPLATE_DFMON, '<', $dfmon_template_file))
-  {
-    print "Template file: $dfmon_template_file\nScript log: $script_log_file_path\n" if (defined $opts{v});
-    while(<TEMPLATE_DFMON>)
-    {
-      chomp($_);
-      print WRITE_DFMON "$_\n";
-    }
-  }
-  else
-  {
-    script_logger($date_and_time, $script_log_file_path, "array_element_to_dfmon_cfg\($node_name\)::Error::Could not open file '$dfmon_template_file'");
-    print "Could not open file '$dfmon_template_file'\n";
-    exit 1;
-  }
-  close(TEMPLATE_DFMON);
-  print "Df_mon.cfg FS alert definition(s):\n" if (defined $opts{v});
-  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
-  print WRITE_DFMON "#******************************************************************************\n";
-  print WRITE_DFMON "#                             AUTO GENERATED LINES\n";
-  print WRITE_DFMON "#******************************************************************************\n";
-  foreach my $array_with_dfmon_parms_values (@{$array_with_dfmon_parms})
-  {
-    chomp($array_with_dfmon_parms_values);
-    #print "$array_with_dfmon_parms_values\n";
-    #When line matches a CMA pattern
-    if ($array_with_dfmon_parms_values =~ m/\[.*\]/)
-    {
-      $cma_parameter = $array_with_dfmon_parms_values;
-      if ($node_os eq "unix")
-      {
-        $cma_parameter =~ s/\],\[/,/;
-        #my $cma_1 = $1;
-        #my $cma_2 = $2;
-        #$cma_parameter = "\[$cma_1,$cma_1\]";
-      }
-      print "$cma_parameter\n" if (defined $opts{v});
-      print WRITE_DFMON $cma_parameter."\n";
-    }
-    #When line matches <fs>--<alert_definitions> pattern
-    if ($array_with_dfmon_parms_values =~ m/([*]|[\w\d:\/-]+)--(\w+\d+[MB|GB|%];.*)/)
-    {
-      #print "$array_with_dfmon_parms_values\n";
-      #Separates fs value
-      $fs_def = $1;
-      #print "FS: $fs_def\n";
-      #Separates alert definitions
-      $alert_def = $2;
-      #print "$alert_def\n";
-      #Split alert definitions and writes them into array
-      @array_of_alert_def = split /;/, $alert_def;
-      #Loops through fs alert definitions
-      foreach my $alert_def_line (@array_of_alert_def)
-      {
-        #Separates alert definition into severity, threshold, currency
-        $alert_def_line =~ m/(\w{2})(\d+)([MB|GB|%])/;
-        chomp($separated_severity_def = $1);
-        chomp($separated_threshold_def =$2);
-        chomp($separated_threshold_currency =$3);
-        #Translate severity code into severity used by df_mon
-        if($separated_severity_def eq "cr")
-        {
-          $separated_severity_def = "Critical";
-        }
-        if($separated_severity_def eq "ma")
-        {
-          $separated_severity_def = "Major\t";
-        }
-        if($separated_severity_def eq "mi")
-        {
-          $separated_severity_def = "Minor\t";
-        }
-        if($separated_severity_def eq "wa")
-        {
-          $separated_severity_def = "Warning";
-        }
-        #df_mon alert syntax line
-        #“c:” Warning 5 500 MB NT 0-6 0700 2200
-        #/home/userx 50Mb - 0800-1700 *
-        #print "$fs_def $separated_severity_def $separated_threshold_def $separated_threshold_currency\n";
-        if ($node_os eq "unix")
-        {
-          print "$fs_def\t$separated_threshold_def$separated_threshold_currency\t$separated_severity_def\t0000-2400\t*\n" if (defined $opts{v});
-          print WRITE_DFMON "$fs_def\t$separated_threshold_def$separated_threshold_currency\t$separated_severity_def\t0000-2400\t*\n";
-        }
-        if ($node_os eq "win")
-        {
-          print "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n" if (defined $opts{v});
-          print WRITE_DFMON "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n";
-        }
-      }
-      #print Dumper @array_of_alert_def;
-    }
-    $array_index_counter++;
-  }
-  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
-  print WRITE_DFMON "#******************************************************************************\n";
-  print WRITE_DFMON "#\tend of df_mon.cfg\t\n";
-  print WRITE_DFMON "#******************************************************************************\n";
-  close(WRITE_DFMON);
-  if ($deploy_flag eq "1")
-  {
-    print "Testing port 383 SSL communication to node ...";
-    $ssl_to_node_result = testOvdeploy_HpomToNode_SSL($node_name, "3000", $date_and_time, $script_log_file_path);
-    print "\n" if ($verbose_flag eq "1");
-    print "\rTesting port 383 SSL communication to node ... FAILED!\n" if ($ssl_to_node_result eq "1");
-    if ($ssl_to_node_result eq "0")
-    {
-      print "\rTesting port 383 SSL communication to node ... OK!\n" ;
-      print "Checking if prefered path exists within node ...";
-      $check_nodes_prefered_path = check_nodes_prefered_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, $verbose_flag);
-      print "\n" if ($verbose_flag eq "1");
-      #If prefered path exists within managed node
-      if ($check_nodes_prefered_path eq "0")
-      {
-        print "\rChecking if prefered path exists within node ... FOUND\n";
-        print "Checking if a previous df_mon.cfg exists in prefered path ...";
-        $dfmoncfg_exists_in_path = file_existance_in_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, "df_mon.cfg", $verbose_flag);
-        print "\n" if ($verbose_flag eq "1");
-        if ($dfmoncfg_exists_in_path eq "0")
-        {
-          print "\rChecking if a previous df_mon.cfg exists in prefered path ... FOUND!\n";
-          print "Backing backup of df_mon.cfg ...\n";
-          rename_file_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $cfg_prefered_path, "df_mon.cfg",  $node_name, $node_os, $verbose_flag);
-          print "Renaming file for upload routine...\n";
-          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
-          print "Deploying df_mon.cfg to node ...\n";
-          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
-          print "Deployment completed!\n";
-          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
-        }
-        if ($dfmoncfg_exists_in_path eq "1")
-        {
-          print "\rChecking if a previous df_mon.cfg exists in prefered path ... NOT FOUND!\n";
-          print "Renaming file for upload routine...\n";
-          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
-          print "Deploying df_mon.cfg to node ...\n";
-          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
-          print "Deployment completed!\n";
-          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
-        }
-      }
-      #If does not exists create it
-      if ($check_nodes_prefered_path eq "1")
-      {
-          print "\rChecking prefered path exists within node ... NOT FOUND\n";
-          print "Creating $cfg_prefered_path directory ...\n";
-          create_dir_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $node_name, $node_os, $verbose_flag);
-          print "Renaming file for upload routine...\n";
-          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
-          print "Deploying df_mon.cfg to node ...\n";
-          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
-          print "Deployment completed!\n";
-          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
-      }
-    }
-  }
-  #print Dumper @{$array_with_dfmon_parms};
-}
-
+#                                                                              #
+################################################################################
 sub array_element_to_perfmon_cfg
 {
   my ($perf_mon_template_dir, $perf_mon_cfg_dir, $array_with_perfmon_parms, $deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
@@ -731,6 +527,432 @@ sub array_element_to_perfmon_cfg
       }
     }
   }
+}
+
+################################################################################
+# Sub name:     array_element_to_dfmon_cfg
+# Description:  sub that change array value into df_mon.cfg syntax lines and then
+#               saves lines to df_mon.cfg
+# Parms:        df_mon_template_dir, array string value, deploy_flag, date_and_time, $script_log_file_path
+# Return:       None
+################################################################################
+sub array_element_to_dfmon_cfg
+{
+  my ($df_mon_template_dir, $df_mon_cfg_dir, $array_with_dfmon_parms, $deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
+  #Dereference array and extracts nodename
+  my $node_name = shift @{$array_with_dfmon_parms};
+  #Dereference array and extracts node os
+  my $node_os = lc(shift @{$array_with_dfmon_parms});
+  chomp($deploy_flag);
+  my $current_cfg_line = "";
+  my $array_index_counter = 0;
+  my $cma_parameter = "";
+  my $fs_def = "";
+  my $alert_def = "";
+  my @array_of_alert_def = ();
+  my $separated_severity_def = "";
+  my $separated_threshold_def = "";
+  my $separated_threshold_currency = "";
+  my $dfmon_cfg_filename = $df_mon_cfg_dir."/"."df_mon.cfg.".$node_name.".".$node_os;
+  my $dfmon_template_file = "";
+  my $ssl_to_node_result = "";
+  my $dfmoncfg_exists_in_path = "";
+  my $cfg_prefered_path = "";
+  my $check_nodes_prefered_path = "";
+  my $rename_file_routine_result = "";
+  print "\nProcessing node: $node_name - OS: $node_os\n" if (!defined $opts{v});
+  print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
+  print "CFG filename: $dfmon_cfg_filename\n" if (defined $opts{v});
+
+  #Based on node's OS, define which df_mon.cfg template file to use
+  #If node is unix
+  if ($node_os eq "unix")
+  {
+      $dfmon_template_file = $df_mon_template_dir."/"."df_mon.cfg.unix";
+      $cfg_prefered_path = "/var/opt/OV/conf/OpC";
+  }
+  #If node is win
+  if ($node_os eq "win")
+  {
+    $dfmon_template_file = $df_mon_template_dir."/"."df_mon.cfg.win";
+    $cfg_prefered_path = 'c:\osit\etc';
+    #print "$dfmon_cfg_prefered_path\n";
+  }
+  #Make a copy of the df_mon.cfg template file for the processed managed based on OS
+  print "Creating file $dfmon_cfg_filename\n" if (!defined $opts{v});
+  open(WRITE_DFMON, '>', $dfmon_cfg_filename);
+  if (open(TEMPLATE_DFMON, '<', $dfmon_template_file))
+  {
+    print "Template file: $dfmon_template_file\nScript log: $script_log_file_path\n" if (defined $opts{v});
+    while(<TEMPLATE_DFMON>)
+    {
+      chomp($_);
+      print WRITE_DFMON "$_\n";
+    }
+  }
+  else
+  {
+    script_logger($date_and_time, $script_log_file_path, "array_element_to_dfmon_cfg\($node_name\)::Error::Could not open file '$dfmon_template_file'");
+    print "Could not open file '$dfmon_template_file'\n";
+    exit 1;
+  }
+  close(TEMPLATE_DFMON);
+  print "Df_mon.cfg FS alert definition(s):\n" if (defined $opts{v});
+  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
+  print WRITE_DFMON "#******************************************************************************\n";
+  print WRITE_DFMON "#                             AUTO GENERATED LINES\n";
+  print WRITE_DFMON "#******************************************************************************\n";
+  foreach my $array_with_dfmon_parms_values (@{$array_with_dfmon_parms})
+  {
+    chomp($array_with_dfmon_parms_values);
+    #print "$array_with_dfmon_parms_values\n";
+    #When line matches a CMA pattern
+    if ($array_with_dfmon_parms_values =~ m/\[.*\]/)
+    {
+      $cma_parameter = $array_with_dfmon_parms_values;
+      if ($node_os eq "unix")
+      {
+        $cma_parameter =~ s/\],\[/,/;
+        #my $cma_1 = $1;
+        #my $cma_2 = $2;
+        #$cma_parameter = "\[$cma_1,$cma_1\]";
+      }
+      print "$cma_parameter\n" if (defined $opts{v});
+      print WRITE_DFMON $cma_parameter."\n";
+    }
+    #When line matches <fs>--<alert_definitions> pattern
+    if ($array_with_dfmon_parms_values =~ m/([*]|[\w\d:\/-]+)--(\w+\d+[MB|GB|%];.*)/)
+    {
+      #print "$array_with_dfmon_parms_values\n";
+      #Separates fs value
+      $fs_def = $1;
+      #print "FS: $fs_def\n";
+      #Separates alert definitions
+      $alert_def = $2;
+      #print "$alert_def\n";
+      #Split alert definitions and writes them into array
+      @array_of_alert_def = split /;/, $alert_def;
+      #Loops through fs alert definitions
+      foreach my $alert_def_line (@array_of_alert_def)
+      {
+        #Separates alert definition into severity, threshold, currency
+        $alert_def_line =~ m/(\w{2})(\d+)([MB|GB|%])/;
+        chomp($separated_severity_def = $1);
+        chomp($separated_threshold_def =$2);
+        chomp($separated_threshold_currency =$3);
+        #Translate severity code into severity used by df_mon
+        if($separated_severity_def eq "cr")
+        {
+          $separated_severity_def = "Critical";
+        }
+        if($separated_severity_def eq "ma")
+        {
+          $separated_severity_def = "Major\t";
+        }
+        if($separated_severity_def eq "mi")
+        {
+          $separated_severity_def = "Minor\t";
+        }
+        if($separated_severity_def eq "wa")
+        {
+          $separated_severity_def = "Warning";
+        }
+        #df_mon alert syntax line
+        #“c:” Warning 5 500 MB NT 0-6 0700 2200
+        #/home/userx 50Mb - 0800-1700 *
+        #print "$fs_def $separated_severity_def $separated_threshold_def $separated_threshold_currency\n";
+        if ($node_os eq "unix")
+        {
+          print "$fs_def\t$separated_threshold_def$separated_threshold_currency\t$separated_severity_def\t0000-2400\t*\n" if (defined $opts{v});
+          print WRITE_DFMON "$fs_def\t$separated_threshold_def$separated_threshold_currency\t$separated_severity_def\t0000-2400\t*\n";
+        }
+        if ($node_os eq "win")
+        {
+          print "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n" if (defined $opts{v});
+          print WRITE_DFMON "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n";
+        }
+      }
+      #print Dumper @array_of_alert_def;
+    }
+    $array_index_counter++;
+  }
+  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
+  print WRITE_DFMON "#******************************************************************************\n";
+  print WRITE_DFMON "#\tend of df_mon.cfg\t\n";
+  print WRITE_DFMON "#******************************************************************************\n";
+  close(WRITE_DFMON);
+  if ($deploy_flag eq "1")
+  {
+    print "Testing port 383 SSL communication to node ...";
+    $ssl_to_node_result = testOvdeploy_HpomToNode_SSL($node_name, "3000", $date_and_time, $script_log_file_path);
+    print "\n" if ($verbose_flag eq "1");
+    print "\rTesting port 383 SSL communication to node ... FAILED!\n" if ($ssl_to_node_result eq "1");
+    if ($ssl_to_node_result eq "0")
+    {
+      print "\rTesting port 383 SSL communication to node ... OK!\n" ;
+      print "Checking if prefered path exists within node ...";
+      $check_nodes_prefered_path = check_nodes_prefered_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, $verbose_flag);
+      print "\n" if ($verbose_flag eq "1");
+      #If prefered path exists within managed node
+      if ($check_nodes_prefered_path eq "0")
+      {
+        print "\rChecking if prefered path exists within node ... FOUND\n";
+        print "Checking if a previous df_mon.cfg exists in prefered path ...";
+        $dfmoncfg_exists_in_path = file_existance_in_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, "df_mon.cfg", $verbose_flag);
+        print "\n" if ($verbose_flag eq "1");
+        if ($dfmoncfg_exists_in_path eq "0")
+        {
+          print "\rChecking if a previous df_mon.cfg exists in prefered path ... FOUND!\n";
+          print "Backing backup of df_mon.cfg ...\n";
+          rename_file_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $cfg_prefered_path, "df_mon.cfg",  $node_name, $node_os, $verbose_flag);
+          print "Renaming file for upload routine...\n";
+          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
+          print "Deploying df_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
+        }
+        if ($dfmoncfg_exists_in_path eq "1")
+        {
+          print "\rChecking if a previous df_mon.cfg exists in prefered path ... NOT FOUND!\n";
+          print "Renaming file for upload routine...\n";
+          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
+          print "Deploying df_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
+        }
+      }
+      #If does not exists create it
+      if ($check_nodes_prefered_path eq "1")
+      {
+          print "\rChecking prefered path exists within node ... NOT FOUND\n";
+          print "Creating $cfg_prefered_path directory ...\n";
+          create_dir_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $node_name, $node_os, $verbose_flag);
+          print "Renaming file for upload routine...\n";
+          system("mv $dfmon_cfg_filename $df_mon_cfg_dir\/df_mon.cfg");
+          print "Deploying df_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "df_mon.cfg", $df_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $dfmon_cfg_filename\/df_mon.cfg");
+      }
+    }
+  }
+  #print Dumper @{$array_with_dfmon_parms};
+}
+
+
+################################################################################
+# Sub name:     array_element_to_eventmon_cfg
+# Description:  sub that change array value into df_mon.cfg syntax lines and then
+#               saves lines to df_mon.cfg
+# Parms:        df_mon_template_dir, array string value, deploy_flag, date_and_time, $script_log_file_path
+# Return:       None
+################################################################################
+sub array_element_to_event_mon_cfg
+{
+  my ($event_mon_template_dir, $event_mon_cfg_dir, $array_with_event_mon_parms, $deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
+  #Dereference array and extracts node name
+  my $node_name = shift @{$array_with_event_mon_parms};
+  my $node_os = "";
+  #Dereference array and extracts node os
+  #my $node_os = lc(shift @{$array_with_eventmon_parms});
+  chomp($deploy_flag);
+  my $current_cfg_line = "";
+  my $array_index_counter = 0;
+  my $cma_parameter = "";
+  my $separated_win_log_type_source = "";
+  my $alert_def = "";
+  my @array_of_alert_def = ();
+  my $separated_severity_def = "";
+  my $separated_event_id_def = "";
+  my $event_mon_cfg_filename = $event_mon_cfg_dir."/"."event_mon.cfg.".$node_name.".".$node_os;
+  my $event_mon_template_file = "";
+  my $ssl_to_node_result = "";
+  my $event_mon_cfg_exists_in_path = "";
+  my $cfg_prefered_path = "";
+  my $check_nodes_prefered_path = "";
+  my $rename_file_routine_result = "";
+  my ($ev_name, $ev_logfile, $ev_source, $ev_id, $ev_sev, $tck_sev, $ev_action) = ("", "", "", "", "", "", "");
+  print "\nProcessing node: $node_name - OS: $node_os\n" if (!defined $opts{v});
+
+  #Validate that node exists within HPOM db
+  #[MACH_BBC_LX26|MACH_BBC_SOL|MACH_BBC_HPUX|MACH_BBC_AIX|MACH_BBC_WIN]
+  my @check_node_in_HPOM = check_node_in_HPOM($node_name);
+  if ($check_node_in_HPOM[0] eq "1")
+  {
+    if ($check_node_in_HPOM[3] =~ m/MACH_BBC_WIN/)
+    {
+      $node_os = "win";
+    }
+    else
+    {
+      #OS node supported
+      return 2;
+    }
+  }
+  else
+  {
+    #Node not found within HPOM
+    return 1;
+  }
+  #If node is win
+  if ($node_os eq "win")
+  {
+    $event_mon_template_file = $event_mon_template_dir."/"."event_mon.cfg.win";
+    $cfg_prefered_path = 'c:\osit\etc';
+    #print "$dfmon_cfg_prefered_path\n";
+  }
+  $event_mon_cfg_filename = $event_mon_cfg_dir."/"."event_mon.cfg.".$node_name.".".$node_os;
+  print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
+  print "CFG filename: $event_mon_cfg_filename\n" if (defined $opts{v});
+  #Make a copy of the event_mon.cfg template file for the processed managed based on OS
+  print "Creating file $event_mon_cfg_filename\n" if (!defined $opts{v});
+  open(WRITE_EVENT_MON, '>', $event_mon_cfg_filename);
+  if (open(TEMPLATE_EVENT_MON, '<', $event_mon_template_file))
+  {
+    print "Template file: $event_mon_template_file\nScript log: $script_log_file_path\n" if (defined $opts{v});
+    while(<TEMPLATE_EVENT_MON>)
+    {
+      chomp($_);
+      print WRITE_EVENT_MON "$_\n";
+    }
+  }
+  else
+  {
+    script_logger($date_and_time, $script_log_file_path, "array_element_to_dfmon_cfg\($node_name\)::Error::Could not open file '$event_mon_template_file'");
+    print "Could not open file '$event_mon_template_file'\n";
+    exit 1;
+  }
+  close(TEMPLATE_EVENT_MON);
+  print "Event_mon.cfg event id alert definition(s):\n" if (defined $opts{v});
+  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
+  ###print WRITE_EVENT_MON "#******************************************************************************\n";
+  ###print WRITE_EVENT_MON "#                             AUTO GENERATED LINES\n";
+  ###print WRITE_EVENT_MON "#******************************************************************************\n";
+  foreach my $array_with_event_mon_parms_values (@{$array_with_event_mon_parms})
+  {
+    chomp($array_with_event_mon_parms_values);
+    #print "$array_with_dfmon_parms_values\n";
+    #When line matches a CMA pattern
+    if ($array_with_event_mon_parms_values =~ m/\[.*\]/)
+    {
+      $cma_parameter = $array_with_event_mon_parms_values;
+      print "$cma_parameter\n" if (defined $opts{v});
+      ###print WRITE_DFMON $cma_parameter."\n";
+    }
+    #When line matches <fs>--<alert_definitions> pattern
+    if ($array_with_event_mon_parms_values =~ m/([*]|[\w\d:\/-]+)--(\w+\d+;.*)/)
+    {
+      #print "$array_with_dfmon_parms_values\n";
+      #Separates fs value
+      $separated_win_log_type_source = $1;
+      #Condition for "Log-->Application"
+      if ($separated_win_log_type_source eq "APP")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "*";
+        $ev_sev = "*"
+      }
+      #Condition for "Log-->System"
+      if ($separated_win_log_type_source eq "SYS")
+      {
+        $ev_logfile = "System";
+        $ev_source = "*";
+        $ev_sev = "*"
+      }
+      #Condition for "Log-->System/Source-->FailoverClustering"
+      if ($separated_win_log_type_source eq "SYS_CLU")
+      {
+        $ev_logfile = "System";
+        $ev_source = "FailoverClustering";
+        $ev_sev = "*"
+      }
+      #Condition for "Log-->Application/Source-->ActiveDirectory_DomainService"
+      if ($separated_win_log_type_source eq "APP_AD")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "ActiveDirectory_DomainService";
+        $ev_sev = "*"
+      }
+      #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
+      if ($separated_win_log_type_source eq "SYS_AD")
+      {
+        $ev_logfile = "System";
+        $ev_source = "ActiveDirectory_DomainService";
+        $ev_sev = "*"
+      }
+      #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
+      if ($separated_win_log_type_source eq "APP_C_AUTH")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "CertificationAuthority";
+        $ev_sev = "*"
+      }
+      #print "FS: $fs_def\n";
+      #Separates alert definitions
+      $alert_def = $2;
+      #print "$alert_def\n";
+      #Split alert definitions and writes them into array
+      @array_of_alert_def = split /;/, $alert_def;
+      #Loops through fs alert definitions
+      foreach my $alert_def_line (@array_of_alert_def)
+      {
+        #Separates alert definition into severity, event_id
+        $alert_def_line =~ m/(\w{2})(\d+)/;
+        chomp($separated_severity_def = $1);
+        chomp($separated_event_id_def =$2);
+        $ev_name = "EventId_$separated_event_id_def";
+        if ($separated_event_id_def eq "111111")
+        {
+          $ev_sev = "Warning";
+          $separated_event_id_def = "*";
+          $ev_name = "EventId_allWarning";
+        }
+        if ($separated_event_id_def eq "222222")
+        {
+          $ev_sev = "Error";
+          $separated_event_id_def = "*";
+          $ev_name = "EventId_allError";
+        }
+
+        #Translate severity code into severity used by df_mon
+        if($separated_severity_def eq "cr")
+        {
+          $separated_severity_def = "Critical";
+        }
+        if($separated_severity_def eq "ma")
+        {
+          $separated_severity_def = "Major\t";
+        }
+        if($separated_severity_def eq "mi")
+        {
+          $separated_severity_def = "Minor\t";
+        }
+        if($separated_severity_def eq "wa")
+        {
+          $separated_severity_def = "Warning";
+        }
+        #df_mon alert syntax line
+        #“c:” Warning 5 500 MB NT 0-6 0700 2200
+        #/home/userx 50Mb - 0800-1700 *
+        #print "$fs_def $separated_severity_def $separated_threshold_def $separated_threshold_currency\n";
+        if ($node_os eq "win")
+        {
+          print $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tT\t$ev_action\n" if (defined $opts{v});
+          #print WRITE_DFMON "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n";
+        }
+      }
+      #print Dumper @array_of_alert_def;
+    }
+    $array_index_counter++;
+  }
+  print "------------------------------------------------------------------------------\n" if (defined $opts{v});
+  ###print WRITE_DFMON "#******************************************************************************\n";
+  ###print WRITE_DFMON "#\tend of df_mon.cfg\t\n";
+  ###print WRITE_DFMON "#******************************************************************************\n";
+  close(WRITE_DFMON);
+
 }
 
 #Sub that test communication from HPOM to managed node
