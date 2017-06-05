@@ -827,9 +827,9 @@ sub array_element_to_event_mon_cfg
   close(TEMPLATE_EVENT_MON);
   print "Event_mon.cfg event id alert definition(s):\n" if (defined $opts{v});
   print "------------------------------------------------------------------------------\n" if (defined $opts{v});
-  ###print WRITE_EVENT_MON "#******************************************************************************\n";
-  ###print WRITE_EVENT_MON "#                             AUTO GENERATED LINES\n";
-  ###print WRITE_EVENT_MON "#******************************************************************************\n";
+  print WRITE_EVENT_MON "#******************************************************************************\n";
+  print WRITE_EVENT_MON "#                             AUTO GENERATED LINES\n";
+  print WRITE_EVENT_MON "#******************************************************************************\n";
   foreach my $array_with_event_mon_parms_values (@{$array_with_event_mon_parms})
   {
     chomp($array_with_event_mon_parms_values);
@@ -940,7 +940,7 @@ sub array_element_to_event_mon_cfg
         if ($node_os eq "win")
         {
           print $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tT\t$ev_action\n" if (defined $opts{v});
-          #print WRITE_DFMON "\"$fs_def\"\t$separated_severity_def\t$separated_threshold_def\t$separated_threshold_currency\t*\t0000    2400\n";
+          print WRITE_EVENT_MON $separated_win_log_type_source;
         }
       }
       #print Dumper @array_of_alert_def;
@@ -948,11 +948,67 @@ sub array_element_to_event_mon_cfg
     $array_index_counter++;
   }
   print "------------------------------------------------------------------------------\n" if (defined $opts{v});
-  ###print WRITE_DFMON "#******************************************************************************\n";
-  ###print WRITE_DFMON "#\tend of df_mon.cfg\t\n";
-  ###print WRITE_DFMON "#******************************************************************************\n";
-  close(WRITE_DFMON);
-
+  print WRITE_EVENT_MON "#******************************************************************************\n";
+  print WRITE_EVENT_MON "#\tend of df_mon.cfg\t\n";
+  print WRITE_EVENT_MON "#******************************************************************************\n";
+  close(WRITE_EVENT_MON);
+  if ($deploy_flag eq "1")
+  {
+    print "Testing port 383 SSL communication to node ...";
+    $ssl_to_node_result = testOvdeploy_HpomToNode_SSL($node_name, "3000", $date_and_time, $script_log_file_path);
+    print "\n" if ($verbose_flag eq "1");
+    print "\rTesting port 383 SSL communication to node ... FAILED!\n" if ($ssl_to_node_result eq "1");
+    if ($ssl_to_node_result eq "0")
+    {
+      print "\rTesting port 383 SSL communication to node ... OK!\n" ;
+      print "Checking if prefered path exists within node ...";
+      $check_nodes_prefered_path = check_nodes_prefered_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, $verbose_flag);
+      print "\n" if ($verbose_flag eq "1");
+      #If prefered path exists within managed node
+      if ($check_nodes_prefered_path eq "0")
+      {
+        print "\rChecking if prefered path exists within node ... FOUND\n";
+        print "Checking if a previous df_mon.cfg exists in prefered path ...";
+        $event_mon_cfg_exists_in_path = file_existance_in_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, "event_mon.cfg", $verbose_flag);
+        print "\n" if ($verbose_flag eq "1");
+        if ($event_mon_cfg_exists_in_path eq "0")
+        {
+          print "\rChecking if a previous event_mon.cfg exists in prefered path ... FOUND!\n";
+          print "Backing backup of event_mon.cfg ...\n";
+          rename_file_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $cfg_prefered_path, "event_mon.cfg",  $node_name, $node_os, $verbose_flag);
+          print "Renaming file for upload routine...\n";
+          system("mv $event_mon_cfg_filename $event_mon_cfg_dir\/event_mon.cfg");
+          print "Deploying event_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "event_mon.cfg", $event_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $event_mon_cfg_filename\/event_mon.cfg");
+        }
+        if ($event_mon_cfg_exists_in_path eq "1")
+        {
+          print "\rChecking if a previous df_mon.cfg exists in prefered path ... NOT FOUND!\n";
+          print "Renaming file for upload routine...\n";
+          system("mv $event_mon_cfg_filename $event_mon_cfg_dir\/event_mon.cfg");
+          print "Deploying event_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "event_mon.cfg", $event_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $event_mon_cfg_filename\/event_mon.cfg");
+        }
+      }
+      #If does not exists create it
+      if ($check_nodes_prefered_path eq "1")
+      {
+          print "\rChecking prefered path exists within node ... NOT FOUND\n";
+          print "Creating $cfg_prefered_path directory ...\n";
+          create_dir_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $node_name, $node_os, $verbose_flag);
+          print "Renaming file for upload routine...\n";
+          system("mv $event_mon_cfg_filename $event_mon_cfg_dir\/df_mon.cfg");
+          print "Deploying event_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "event_mon.cfg", $event_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+          system("rm -f $event_mon_cfg_filename\/event_mon.cfg");
+      }
+    }
+  }
 }
 
 #Sub that test communication from HPOM to managed node
