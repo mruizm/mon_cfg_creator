@@ -949,7 +949,7 @@ sub array_element_to_event_mon_cfg
   }
   print "------------------------------------------------------------------------------\n" if (defined $opts{v});
   print WRITE_EVENT_MON "#******************************************************************************\n";
-  print WRITE_EVENT_MON "#\tend of df_mon.cfg\t\n";
+  print WRITE_EVENT_MON "#\tend of event_mon.cfg\t\n";
   print WRITE_EVENT_MON "#******************************************************************************\n";
   close(WRITE_EVENT_MON);
   if ($deploy_flag eq "1")
