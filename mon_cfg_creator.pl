@@ -127,8 +127,9 @@ while (<FSCSV>)
   }
   if ($modules_to_cfg eq "event_mon")
   {
+    #print "FILENAME: $script_path/$csv_input_filename\n";
     @array_to_event_mon_cfg = parse_csv_to_array($_);
-    ##print Dumper @array_to_eventmon_cfg;
+    #print Dumper @array_to_event_mon_cfg;
     array_element_to_event_mon_cfg($script_event_mon_template_cfgs, $script_event_mon_created_cfgs, \@array_to_event_mon_cfg, $deploy_flag, $datetime_stamp, $script_event_mon_log_file_path, $verbose_flag)
   }
   local $| = 1;
@@ -162,6 +163,7 @@ sub parse_csv_to_array
   my $drive_fs_name = "";
 
   chomp(my $fs_csv_line = shift);
+  #print "CSV LINE: $fs_csv_line\n";
   $fs_csv_line =~ s/\s\s+//;
   my @csv_line_into_array = split /,/, $fs_csv_line;
 
@@ -754,7 +756,7 @@ sub array_element_to_event_mon_cfg
   my ($event_mon_template_dir, $event_mon_cfg_dir, $array_with_event_mon_parms, $deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
   #Dereference array and extracts node name
   my $node_name = shift @{$array_with_event_mon_parms};
-  my $node_os = "";
+  my $node_os = lc(shift @{$array_with_event_mon_parms});
   #Dereference array and extracts node os
   #my $node_os = lc(shift @{$array_with_eventmon_parms});
   chomp($deploy_flag);
@@ -775,12 +777,16 @@ sub array_element_to_event_mon_cfg
   my $rename_file_routine_result = "";
   my ($ev_name, $ev_logfile, $ev_source, $ev_id, $ev_sev, $tck_sev, $ev_action) = ("", "", "", "", "", "", "");
   print "\nProcessing node: $node_name - OS: $node_os\n" if (!defined $opts{v});
+  #print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
+  #print "CFG filename: $event_mon_cfg_filename\n" if (defined $opts{v});
 
   #Validate that node exists within HPOM db
   #[MACH_BBC_LX26|MACH_BBC_SOL|MACH_BBC_HPUX|MACH_BBC_AIX|MACH_BBC_WIN]
   my @check_node_in_HPOM = check_node_in_HPOM($node_name);
+
   if ($check_node_in_HPOM[0] eq "1")
   {
+    #print "Node was FOUND!\n";
     if ($check_node_in_HPOM[3] =~ m/MACH_BBC_WIN/)
     {
       $node_os = "win";
@@ -793,6 +799,7 @@ sub array_element_to_event_mon_cfg
   }
   else
   {
+    #print "Node was NOT FOUND!\n";
     #Node not found within HPOM
     return 1;
   }
@@ -852,43 +859,98 @@ sub array_element_to_event_mon_cfg
       {
         $ev_logfile = "Application";
         $ev_source = "*";
-        $ev_sev = "*"
+        $ev_sev = "*";
       }
       #Condition for "Log-->System"
       if ($separated_win_log_type_source eq "SYS")
       {
         $ev_logfile = "System";
         $ev_source = "*";
-        $ev_sev = "*"
+        $ev_sev = "*";
       }
       #Condition for "Log-->System/Source-->FailoverClustering"
       if ($separated_win_log_type_source eq "SYS_CLU")
       {
         $ev_logfile = "System";
         $ev_source = "FailoverClustering";
-        $ev_sev = "*"
+        $ev_sev = "*";
       }
       #Condition for "Log-->Application/Source-->ActiveDirectory_DomainService"
       if ($separated_win_log_type_source eq "APP_AD")
       {
         $ev_logfile = "Application";
         $ev_source = "ActiveDirectory_DomainService";
-        $ev_sev = "*"
+        $ev_sev = "*";
       }
       #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
       if ($separated_win_log_type_source eq "SYS_AD")
       {
         $ev_logfile = "System";
         $ev_source = "ActiveDirectory_DomainService";
-        $ev_sev = "*"
+        $ev_sev = "*";
+      }
+      if ($separated_win_log_type_source eq "SYS_VirtDiskSrv")
+      {
+        $ev_logfile = "System";
+        $ev_source = "Virtual Disk Service";
+        $ev_sev = "Error";
+      }
+      if ($separated_win_log_type_source eq "SYS_Eventlog")
+      {
+        $ev_logfile = "System";
+        $ev_source = "EventLog";
+        $ev_sev = "Error";
+      }
+      if ($separated_win_log_type_source eq "SYS_HPFC")
+      {
+        $ev_logfile = "System";
+        $ev_source = "HP Fibre Channel";
+        $ev_sev = "Error";
+      }
+      if ($separated_win_log_type_source eq "SYS_VHPEVA")
+      {
+        $ev_logfile = "System";
+        $ev_source = "VHPEVA";
+        $ev_sev = "Normal";
+      }
+      if ($separated_win_log_type_source eq "SYS_Disk")
+      {
+        $ev_logfile = "System";
+        $ev_source = "Disk";
+        $ev_sev = "Warning";
       }
       #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
       if ($separated_win_log_type_source eq "APP_C_AUTH")
       {
         $ev_logfile = "Application";
         $ev_source = "CertificationAuthority";
-        $ev_sev = "*"
+        $ev_sev = "*";
       }
+      if ($separated_win_log_type_source eq "APP_SQL_SERVER")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "MSSQLSERVER";
+        $ev_sev = "Normal";
+      }
+      if ($separated_win_log_type_source eq "APP_MSEXCH_1009")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "MSExchangeMailSubmission";
+        $ev_sev = "Error";
+      }
+      if ($separated_win_log_type_source eq "APP_MSEXCH_4121")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "MSExchangeRepl";
+        $ev_sev = "Warning";
+      }
+      if ($separated_win_log_type_source eq "APP_MSEXCH_10025")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "MSExchangeIS";
+        $ev_sev = "Error";
+      }
+
       #print "FS: $fs_def\n";
       #Separates alert definitions
       $alert_def = $2;
@@ -939,7 +1001,7 @@ sub array_element_to_event_mon_cfg
         #print "$fs_def $separated_severity_def $separated_threshold_def $separated_threshold_currency\n";
         if ($node_os eq "win")
         {
-          print $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tT\t$ev_action\n" if (defined $opts{v});
+          print $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tTT\t$ev_action\n" if (defined $opts{v});
           print WRITE_EVENT_MON $separated_win_log_type_source;
         }
       }
