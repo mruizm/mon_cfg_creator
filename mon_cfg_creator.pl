@@ -13,6 +13,7 @@
 #           -d deploy cfg to managed node
 #           -m <mon_module>: df_mon|srv_mon|ps_mon|perfmon
 #           -v Verbose mode
+#           -s <event_mon_codes>
 # Routines:
 ################################################################################
 #dirs to create initially:
@@ -23,19 +24,66 @@
 # /opt/OpC_local/mon_cfg_creator/cfg/perfmon
 # /opt/OpC_local/mon_cfg_creator/templates/perfmon
 # /opt/OpC_local/mon_cfg_creator/log/perfmon
-#  perl mon_cfg_creator.pl -f hp_sag.csv -m df_mon -d -v
+#  perl mon_cfg_creator.pl -f $1 -m df_mon -d -v
 #  perl mon_cfg_creator.pl -f node.lst -m perf_mon -d -v
 # /opt/perf/bin/agsysdb -actions always
 # ovpa restart alarm
 #111111 Warning/222222 Error
 #perl mon_cfg_creator.pl -f cma.lst -m event_mon -d -v
+################################################################################
+#Event codes for CSV event_mon
+#WINDOWS SYSTEM LOG
+#
+#SYS:				      Source:* Severity:*
+#SYS_CLU:			    Source:FailoverClustering Severity:*
+#SYS_AD:				  Source:ActiveDirectory_DomainService Severity:*
+#SYS_VirtDiskSrv:	Source:Virtual Disk Service Severity:Error
+#SYS_Eventlog:		Source:EventLog Severity:Error
+#SYS_HPFC:			  Source:HP Fibre Channel Severity:Error
+#SYS_VHPEVA:			Source:VHPEVA Severity:Normal
+#SYS_Disk:			  Source:Disk Severity:Warning
+#SYS_SCSI:			  Source:iScsiPrt Severity:Warning
+#SYS_QA12300:		  Source:ql2300 Severity:Error
+
+#WINDOWS APPLICATION LOG
+#APP:				      Source:* Severity:*
+#APP_AD:				  Source:ActiveDirectory_DomainService Severity:*
+#APP_C_AUTH:			Source:CertificationAuthority Severity:*
+#APP_SQL_SERVER:	Source:MSSQLSERVER Severity:Normal
+#APP_MSEXCH_SUB:	Source:MSExchangeMailSubmission Severity: Error
+#APP_MSEXCH_REPL:	Source:MSExchangeRepl Severity:Warning
+#APP_MSEXCH_IS:		Source:MSExchangeIS Severity:Error
+#APP_BB_Disp:		  Source:BlackBerry Dispatcher TBK-BES Severity:Error
+#APP_BB_ROUTER:		Source:BlackBerry Router Severity:Error
+################################################################################
+#Event_mon cfg file format:
+#   <nodename>,<WIN>,[<CMA>],<WIN_LOGFILE_CODE>,<cr|ma|mi|wa><event_id_number>,....,EOL
+#   Example:
+#     tkpaimap01.transbank.local,WIN,[OS],SYS_QA12300,wa11,SYS_Disk,wa51,SYS_SCSI,wa20,SYS_Eventlog,wa6008,SYS_VirtDiskSrv,wa1,SYS_VHPEVA,wa13,APP_BB_Disp,wa10000,APP_BB_ROUTER,wa10000,EOL
+#Df_mon cfg file format:
+#     <nodename>,<WIN|UNIX>,[<CMA>],<FS>,<cr|ma|mi|wa><threshold><currency>,...,EOF
+#   Example:
+#     tkpaictxapp08.transbank.local,WIN,[OS],*,cr5%,ma15%,EOL
+#Perf_mon cfg file format:
+#     <nodename>,<WIN|UNIX>,[CMA],<PERF_METRIC_NAME>;<INSTANCE>,<cr|ma|mi|wa><threshold>,<duration>,...,EOL
+#   Example:
+#     tkpaidc01.transbank.local,WIN,[OS],GBL_MEM_UTIL;NONE,cr95,wa85,5,GBL_CPU_TOTAL_UTIL;NONE,cr95,wa85,5,EOL
+#Srv_mon cfg file format:
+#     <nodename>,<WIN>,AUTO_SRV_MODE=<YES|NO>,AUTO_SRV_EXP_L="<srv_name_1","<srv_name_2>",...,AUTO_SRV_RESTART=<YES|NO>,AUTO_SRV_RESTART_EXP_L="<srv_name_1","<srv_name_2>",...,[CMA]="srv_name_1",<cr|ma|mi|wa><31|11|5|3|1|0>,...,EOF
+#   Example:
+#     tkpaidc01.transbank.local,WIN,AUTO_SRV_MODE=NO,AUTO_SRV_EXP_L="Smartcard*",AUTO_SRV_RESTART=NO,[OS,Oracle]="oracle.exe",cr31,[OS]="ovcd.exe",cr31,EOF
+#
+
+#Recursive patter for global vars: WIN,((?:[\w=\"\w\*\",]|(?R))*),
+#Matches: tkpaidc01.transbank.local,WIN,AUTO_SRV_RESTART=NO,AUTO_SRV_MODE="NO",AUTO_SRV_EXP_L="Smartcard*","oracle.exe",cr31,"ovcd.exe",cr31,EOF
+
 use warnings;
 use strict;
 use Getopt::Std;
 use Data::Dumper qw(Dumper);
 
 our %opts = ();
-getopts("f:c:m:vd", \%opts) or exit 1;
+getopts("f:c:m:s:vd", \%opts) or exit 1;
 
 #Global script variables
 my $datetime_stamp = `date "+%m%d%Y_%H%M%S"`;
@@ -70,7 +118,42 @@ my $script_event_mon_tmp = $script_path."/tmp/event_mon";
 my $script_event_mon_log_file_path = $script_path."/log/event_mon/event_mon_cfg_push.log.$datetime_stamp";
 #my $r = 0;
 
+my @array_to_srv_mon_cfg = ();
+my $script_srv_mon_created_cfgs = $script_path."/cfg/srv_mon";
+my $script_srv_mon_template_cfgs = $script_path."/templates/srv_mon";
+my $script_srv_mon_tmp = $script_path."/tmp/srv_mon";
+my $script_srv_mon_log_file_path = $script_path."/log/srv_mon/srv_mon_cfg_push.log.$datetime_stamp";
+
 # If -f and -m options are not defined
+if ((defined $opts{s}) || (!defined $opts{f}) || (!defined $opts{c}) || (!defined $opts{m}) || (!defined $opts{v}) || (!defined $opts{d}))
+{
+  if($opts{s} eq "event_mon")
+  {
+    print "\nCodes for event_mon CSV:\n";
+    print "\nFor System logfile:\n";
+    print " SYS:\t\t\tSource:* Severity:*\n";
+    print " SYS_CLU:\t\tSource:FailoverClustering Severity:*\n";
+    print " SYS_AD:\t\tSource:ActiveDirectory_DomainService Severity:*\n";
+    print " SYS_VirtDiskSrv:\tSource:Virtual Disk Service Severity:Error\n";
+    print " SYS_Eventlog:\t\tSource:EventLog Severity:Error\n";
+    print " SYS_HPFC:\t\tSource:HP Fibre Channel Severity:Error\n";
+    print " SYS_VHPEVA:\t\tSource:VHPEVA Severity:Normal\n";
+    print " SYS_Disk:\t\tSource:Disk Severity:Warning\n";
+    print " SYS_SCSI:\t\tSource:iScsiPrt Severity:Warning\n";
+    print " SYS_QA12300:\t\tSource:ql2300 Severity:Error\n\n";
+    print "For Application logfile:\n";
+    print " APP:\t\t\tSource:* Severity:*\n";
+    print " APP_AD:\t\tSource:ActiveDirectory_DomainService Severity:*\n";
+    print " APP_C_AUTH:\t\tSource:CertificationAuthority Severity:*\n";
+    print " APP_SQL_SERVER:\tSource:MSSQLSERVER Severity:Normal\n";
+    print " APP_MSEXCH_SUB:\tSource:MSExchangeMailSubmission Severity:Error\n";
+    print " APP_MSEXCH_REPL:\tSource:MSExchangeRepl Severity:Warning\n";
+    print " APP_MSEXCH_IS:\t\tSource:MSExchangeIS Severity:Error\n";
+    print " APP_BB_Disp:\t\tSource:BlackBerry Dispatcher TBK-BES Severity:Error\n";
+    print " APP_BB_ROUTER:\t\tSource:BlackBerry Router Severity:Error\n\n";
+    exit 0;
+  }
+}
 if ((!defined $opts{f}) || (!defined $opts{m}))
 {
   print "Option -f needs csv input file defined!\n" if (!defined $opts{f});
@@ -81,7 +164,7 @@ if ((!defined $opts{f}) || (!defined $opts{m}))
 chomp($csv_input_filename = $opts{f});
 chomp($modules_to_cfg = $opts{m});
 #Script exits if -m parameter does not match a valid module name
-if ($modules_to_cfg !~ m/df_mon|perf_mon|event_mon/)
+if ($modules_to_cfg !~ m/df_mon|perf_mon|event_mon|srv_mon/)
 {
   print "Invalid parameter value (\"$modules_to_cfg\") for -m option!\nPlease use one of the parameters: df_mon, perf_mon, event_mon\n\n";
   exit 1;
@@ -131,6 +214,13 @@ while (<FSCSV>)
     @array_to_event_mon_cfg = parse_csv_to_array($_);
     #print Dumper @array_to_event_mon_cfg;
     array_element_to_event_mon_cfg($script_event_mon_template_cfgs, $script_event_mon_created_cfgs, \@array_to_event_mon_cfg, $deploy_flag, $datetime_stamp, $script_event_mon_log_file_path, $verbose_flag)
+  }
+  if ($modules_to_cfg eq "srv_mon")
+  {
+    #print "FILENAME: $script_path/$csv_input_filename\n";
+    #print Dumper @array_to_event_mon_cfg;
+    #my ($srv_mon_cfg_dir,$deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
+    srv_mon_deploy($_, $script_srv_mon_created_cfgs, $deploy_flag, $datetime_stamp, $script_srv_mon_log_file_path, $verbose_flag)
   }
   local $| = 1;
   #for (my $i = 5; $i >= 0; $i--)
@@ -265,6 +355,7 @@ sub array_element_to_perfmon_cfg
   print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
   if ($node_os eq "unix")
   {
+    chomp($node_os);
     $perf_mon_file_name = "UXMONperf.cfg";
     $perf_mon_data_file_name = "alarmdef";
     $perfmon_template_file = $perf_mon_template_dir."/"."UXMONperf.cfg.unix";
@@ -840,7 +931,7 @@ sub array_element_to_event_mon_cfg
   foreach my $array_with_event_mon_parms_values (@{$array_with_event_mon_parms})
   {
     chomp($array_with_event_mon_parms_values);
-    #print "$array_with_dfmon_parms_values\n";
+    #print "TEST: $array_with_event_mon_parms_values\n";
     #When line matches a CMA pattern
     if ($array_with_event_mon_parms_values =~ m/\[.*\]/)
     {
@@ -851,16 +942,11 @@ sub array_element_to_event_mon_cfg
     #When line matches <fs>--<alert_definitions> pattern
     if ($array_with_event_mon_parms_values =~ m/([*]|[\w\d:\/-]+)--(\w+\d+;.*)/)
     {
-      #print "$array_with_dfmon_parms_values\n";
+      ##print "$array_with_event_mon_parms_values\n";
       #Separates fs value
       $separated_win_log_type_source = $1;
-      #Condition for "Log-->Application"
-      if ($separated_win_log_type_source eq "APP")
-      {
-        $ev_logfile = "Application";
-        $ev_source = "*";
-        $ev_sev = "*";
-      }
+      #print "EVENT_SOURCE: $separated_win_log_type_source\n";
+#START##################################################################################SYSTEM LOFGILE EVENTS
       #Condition for "Log-->System"
       if ($separated_win_log_type_source eq "SYS")
       {
@@ -873,13 +959,6 @@ sub array_element_to_event_mon_cfg
       {
         $ev_logfile = "System";
         $ev_source = "FailoverClustering";
-        $ev_sev = "*";
-      }
-      #Condition for "Log-->Application/Source-->ActiveDirectory_DomainService"
-      if ($separated_win_log_type_source eq "APP_AD")
-      {
-        $ev_logfile = "Application";
-        $ev_source = "ActiveDirectory_DomainService";
         $ev_sev = "*";
       }
       #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
@@ -919,6 +998,34 @@ sub array_element_to_event_mon_cfg
         $ev_source = "Disk";
         $ev_sev = "Warning";
       }
+      if ($separated_win_log_type_source eq "SYS_SCSI")
+      {
+        $ev_logfile = "System";
+        $ev_source = "iScsiPrt";
+        $ev_sev = "Warning";
+      }
+      if ($separated_win_log_type_source eq "SYS_QA12300")
+      {
+        $ev_logfile = "System";
+        $ev_source = "ql2300";
+        $ev_sev = "Error";
+      }
+#END##################################################################################SYSTEM LOFGILE EVENTS
+#START################################################################################APPLICATION LOFGILE EVENTS
+      #Condition for "Log-->Application"
+      if ($separated_win_log_type_source eq "APP")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "*";
+        $ev_sev = "*";
+      }
+      #Condition for "Log-->Application/Source-->ActiveDirectory_DomainService"
+      if ($separated_win_log_type_source eq "APP_AD")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "ActiveDirectory_DomainService";
+        $ev_sev = "*";
+      }
       #Condition for "Log-->System/Source-->ActiveDirectory_DomainService"
       if ($separated_win_log_type_source eq "APP_C_AUTH")
       {
@@ -932,25 +1039,37 @@ sub array_element_to_event_mon_cfg
         $ev_source = "MSSQLSERVER";
         $ev_sev = "Normal";
       }
-      if ($separated_win_log_type_source eq "APP_MSEXCH_1009")
+      if ($separated_win_log_type_source eq "APP_MSEXCH_SUB")
       {
         $ev_logfile = "Application";
         $ev_source = "MSExchangeMailSubmission";
         $ev_sev = "Error";
       }
-      if ($separated_win_log_type_source eq "APP_MSEXCH_4121")
+      if ($separated_win_log_type_source eq "APP_MSEXCH_REPL")
       {
         $ev_logfile = "Application";
         $ev_source = "MSExchangeRepl";
         $ev_sev = "Warning";
       }
-      if ($separated_win_log_type_source eq "APP_MSEXCH_10025")
+      if ($separated_win_log_type_source eq "APP_MSEXCH_IS")
       {
         $ev_logfile = "Application";
         $ev_source = "MSExchangeIS";
         $ev_sev = "Error";
       }
-
+      if ($separated_win_log_type_source eq "APP_BB_Disp")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "BlackBerry Dispatcher TBK-BES";
+        $ev_sev = "Error";
+      }
+      if ($separated_win_log_type_source eq "APP_BB_ROUTER")
+      {
+        $ev_logfile = "Application";
+        $ev_source = "BlackBerry Router";
+        $ev_sev = "Error";
+      }
+#END################################################################################APPLICATION LOFGILE EVENTS
       #print "FS: $fs_def\n";
       #Separates alert definitions
       $alert_def = $2;
@@ -1001,7 +1120,8 @@ sub array_element_to_event_mon_cfg
         #print "$fs_def $separated_severity_def $separated_threshold_def $separated_threshold_currency\n";
         if ($node_os eq "win")
         {
-          print $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tTT\t$ev_action\n" if (defined $opts{v});
+          $separated_win_log_type_source = "\"$ev_name\"\t\"+\"\t\"$ev_logfile\"\t\"$ev_source\"\t\"*\"\t\"*\"\t$separated_event_id_def\t$ev_sev\t*\t0000\t2400\t$separated_severity_def\tTT\t$ev_action\n" if (defined $opts{v});
+          print "$separated_win_log_type_source\n";
           print WRITE_EVENT_MON $separated_win_log_type_source;
         }
       }
@@ -1068,6 +1188,95 @@ sub array_element_to_event_mon_cfg
           upload_mon_file($date_and_time, $script_log_file_path, $node_name, "event_mon.cfg", $event_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
           print "Deployment completed!\n";
           system("rm -f $event_mon_cfg_filename\/event_mon.cfg");
+      }
+    }
+  }
+}
+
+sub srv_mon_deploy
+{
+  my ($node_name, $srv_mon_cfg_dir,$deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
+  #Dereference array and extracts node name
+  my $srv_mon_cfg_filename = $srv_mon_cfg_dir."/"."srv_mon.cfg";
+  my $cfg_prefered_path = 'c:\osit\etc';
+  my $check_nodes_prefered_path;
+  my $srv_mon_cfg_exists_in_path;
+  my $node_os;
+  my $ssl_to_node_result;
+  my @check_node_in_HPOM = check_node_in_HPOM($node_name);
+
+  if ($check_node_in_HPOM[0] eq "1")
+  {
+    #print "Node was FOUND!\n";
+    if ($check_node_in_HPOM[3] =~ m/MACH_BBC_WIN/)
+    {
+      $node_os = "win";
+    }
+    else
+    {
+      #OS node supported
+      return 2;
+    }
+  }
+  else
+  {
+    #print "Node was NOT FOUND!\n";
+    #Node not found within HPOM
+    return 1;
+  }
+  #If node is win
+  if ($node_os eq "win")
+  {
+    $cfg_prefered_path = 'c:\osit\etc';
+    #print "$dfmon_cfg_prefered_path\n";
+  }
+  print "\nNodename: $node_name \nOS: $node_os\n" if (defined $opts{v});
+  print "CFG filename: $srv_mon_cfg_filename\n" if (defined $opts{v});
+  if ($deploy_flag eq "1")
+  {
+    print "Testing port 383 SSL communication to node ...";
+    $ssl_to_node_result = testOvdeploy_HpomToNode_SSL($node_name, "3000", $date_and_time, $script_log_file_path);
+    print "\n" if ($verbose_flag eq "1");
+    print "\rTesting port 383 SSL communication to node ... FAILED!\n" if ($ssl_to_node_result eq "1");
+    if ($ssl_to_node_result eq "0")
+    {
+      print "\rTesting port 383 SSL communication to node ... OK!\n" ;
+      print "Checking if prefered path exists within node ...";
+      $check_nodes_prefered_path = check_nodes_prefered_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, $verbose_flag);
+      print "\n" if ($verbose_flag eq "1");
+      #If prefered path exists within managed node
+      if ($check_nodes_prefered_path eq "0")
+      {
+        print "\rChecking if prefered path exists within node ... FOUND\n";
+        print "Checking if a previous srv_mon.cfg exists in prefered path ...";
+        $srv_mon_cfg_exists_in_path = file_existance_in_path($date_and_time, $script_log_file_path, $node_name, $node_os, $cfg_prefered_path, "srv_mon.cfg", $verbose_flag);
+        print "\n" if ($verbose_flag eq "1");
+        if ($srv_mon_cfg_exists_in_path eq "0")
+        {
+          print "\rChecking if a previous srv_mon.cfg exists in prefered path ... FOUND!\n";
+          print "Backing backup of srv_mon.cfg ...\n";
+          rename_file_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $cfg_prefered_path, "srv_mon.cfg",  $node_name, $node_os, $verbose_flag);
+          print "Deploying srv_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "srv_mon.cfg", $srv_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+        }
+        if ($srv_mon_cfg_exists_in_path eq "1")
+        {
+          print "\rChecking if a previous srv_mon.cfg exists in prefered path ... NOT FOUND!\n";
+          print "Deploying srv_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "srv_mon.cfg", $srv_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
+        }
+      }
+      #If does not exists create it
+      if ($check_nodes_prefered_path eq "1")
+      {
+          print "\rChecking prefered path exists within node ... NOT FOUND\n";
+          print "Creating $cfg_prefered_path directory ...\n";
+          create_dir_routine($date_and_time, $script_log_file_path, $cfg_prefered_path, $node_name, $node_os, $verbose_flag);
+          print "Deploying srv_mon.cfg to node ...\n";
+          upload_mon_file($date_and_time, $script_log_file_path, $node_name, "srv_mon.cfg", $srv_mon_cfg_dir, $cfg_prefered_path, $verbose_flag, "3000");
+          print "Deployment completed!\n";
       }
     }
   }
@@ -1402,4 +1611,16 @@ sub check_node_in_HPOM
 		$node_mach_type_ip_addr[0] = 0;
 	}
   return @node_mach_type_ip_addr;
+}
+
+
+######################################################################
+#Sub that adds an automatic service within variable AUTOMATIC_SERVICES_MONITORING_EXCEPTION_LIST
+#in order to exclude it from monitoring
+#@Parms:    $win_full_name_service
+#
+######################################################################
+sub srv_mon_exclude_auto_services
+{
+
 }
