@@ -318,41 +318,6 @@ while (<FSCSV>)
     #print "ERROR:NOK_NODE_IN_HPOM:LINE:$hash_csv_cfg_vals{csv_parse_return}\n";
     print "ERROR:NOK_CSV_SYNTAX:LINE:$in_csv_line_counter\n";
   }
-  #parse_csv_mon_line_to_gvars_thresholds($_);
-  #Array that has the elements to create the df_mon.cfg per OS
-  #if ($modules_to_cfg eq "df_mon")
-  #{
-  #  @array_to_dfmon_cfg = parse_csv_to_array($in_csv_line);
-  #  #print Dumper \@array_to_dfmon_cfg;
-  #  chomp($datetime_stamp = `date "+%m%d%Y_%H%M%S"`);
-  #  array_element_to_dfmon_cfg($script_dfmon_template_cfgs, $script_dfmon_created_cfgs, \@array_to_dfmon_cfg, $deploy_flag, $datetime_stamp, $script_dfmon_log_file_path, $verbose_flag);
-  #}
-  #if ($modules_to_cfg eq "perf_mon")
-  #{
-  #  @array_to_perfmon_cfg = parse_csv_to_array($in_csv_line);
-  #  array_element_to_perfmon_cfg($script_perfmon_template_cfgs, $script_perfmon_created_cfgs, \@array_to_perfmon_cfg, $deploy_flag, $datetime_stamp, $script_perfmon_log_file_path, $verbose_flag);
-  #  #chomp($datetime_stamp = `date "+%m%d%Y_%H%M%S"`);
-  #  #print Dumper \@array_to_perfmon_cfg;
-  #}
-  #if ($modules_to_cfg eq "event_mon")
-  #{
-  #  #print "FILENAME: $script_path/$csv_input_filename\n";
-  #  @array_to_event_mon_cfg = parse_csv_to_array($in_csv_line);
-  #  #print Dumper @array_to_event_mon_cfg;
-  #  array_element_to_event_mon_cfg($script_event_mon_template_cfgs, $script_event_mon_created_cfgs, \@array_to_event_mon_cfg, $deploy_flag, $datetime_stamp, $script_event_mon_log_file_path, $verbose_flag)
-  #}
-  #if ($modules_to_cfg eq "srv_mon")
-  #{
-  #  #print "FILENAME: $script_path/$csv_input_filename\n";
-  #  #print Dumper @array_to_event_mon_cfg;
-  #  #my ($srv_mon_cfg_dir,$deploy_flag, $date_and_time, $script_log_file_path, $verbose_flag) = @_;
-  #  srv_mon_deploy($in_csv_line, $script_srv_mon_created_cfgs, $deploy_flag, $datetime_stamp, $script_srv_mon_log_file_path, $verbose_flag)
-  #}
-  #local $| = 1;
-  #for (my $i = 5; $i >= 0; $i--)
-  #{
-    #sleep 1;
-    #print "\rMoving to next node in $i seconds ...";
   print "\rMoving to next node...";
   #}
   print "\n\n";
@@ -1408,39 +1373,6 @@ sub srv_mon_deploy
   }
 }
 
-#Sub that test communication from HPOM to managed node
-#Parms:   $node_name:               managed node FQDN (or alias)
-#         $cmdtimeout:              miliseconds to determine managed node is not reacheable
-#         $date_and_time:           actual timestamp
-#         $script_logfile:          string to be logged into log file
-#Return:  0                         if communication ok
-#         1                         if communication failed
-sub testOvdeploy_HpomToNode_SSL
-{
-	chomp(my $node_name = shift);
-  chomp(my $cmdtimeout = shift);
-  chomp(my $date_and_time = shift);
-  chomp(my $logfilename_with_path = shift);
-	chomp(my $HPOM_ip = `hostname`);
-	my $eServiceOK_found = "";
-	my @remote_bbcutil_ping_node_ssl = qx{ovdeploy -cmd bbcutil -par \"-ping https://$node_name\" -host $HPOM_ip -cmd_timeout $cmdtimeout};
-	my @remote_bbcutil_ping_node_ssl_edited = ();
-	foreach my $bbcutil_line_out_ssl (@remote_bbcutil_ping_node_ssl)
-	{
-		chomp($bbcutil_line_out_ssl);
-    print "\n--> $bbcutil_line_out_ssl" if ($verbose_flag eq "1");
-		if ($bbcutil_line_out_ssl =~ m/eServiceOK/)
-		{
-      script_logger($date_and_time, $logfilename_with_path, "$node_name\:\:testOvdeploy_HpomToNode_SSL\(\)::Information::SSL communication OK!");
-			return 0;
-		}
-		if ($bbcutil_line_out_ssl =~ m/^ERROR:/)
-		{
-      script_logger($date_and_time, $logfilename_with_path, "$node_name\:\:testOvdeploy_HpomToNode_SSL\(\)::Error::SSL \cCommunication timedout!");
-      return 1;
-		}
-	}
-}
 #v1.1: removed log of errors within sub to just use return codes
 #Sub that test communication from HPOM to managed node
 #Parms:   $node_name:               managed node FQDN (or alias)
@@ -1468,55 +1400,6 @@ sub testOvdeploy_HpomToNode_SSL_v1
       return 1;
 		}
 	}
-}
-
-#Sub to check the existance of a file within the OS fs
-#Parms:   $logfilename_with_path
-#         $date_and_time
-#         $os_family:   windows|unix
-#         $file_path:   path of file to verify
-#         $file_name:   name of file to verify
-#         $debug_flag   to get debug output
-#Return:  $file_exists_in_path:   0 --> file exists in path
-#                                 1 --> file does not exists in path
-sub file_existance_in_path
-{
-  chomp(my $date_and_time = shift);
-  chomp(my $logfilename_with_path = shift);
-  chomp(my $node_name = shift);
-  chomp(my $node_os = shift);
-  chomp(my $file_path = shift);
-  chomp(my $file_name = shift);
-  chomp(my $verbose_flag = shift);
-  my @check_file_cmd = ();
-  my $check_file_cmd_line = '';
-  my $file_exists_in_path = '1';
-
-  @check_file_cmd = qx{ovdeploy -cmd if -par \"[ -f $file_path"/"$file_name ]; then echo FOUND $file_name !;else echo NOT_FOUND $file_name;fi\" -host $node_name} if ($node_os =~ m/UNIX/i);
-  @check_file_cmd = qx{ovdeploy -cmd if -par \"exist $file_path\\$file_name (echo FOUND $file_name) else (echo NOT_FOUND $file_name)\" -host $node_name} if ($node_os =~ m/WIN/i);
-  #@check_file_cmd = qx{ovdeploy -cmd ls -par \"-l $file_path"/"$file_name\" -host $node_name} if ($os_family eq "unix");
-  #@check_file_cmd = qx{ovdeploy -cmd dir -par "$file_path'\\'$file_name" -host $node_name} if ($os_family eq "win");
-
-  foreach $check_file_cmd_line (@check_file_cmd)
-  {
-    chomp($check_file_cmd_line);
-    print "\n--> $check_file_cmd_line" if ($verbose_flag eq "1");
-    #print "$check_file_cmd_line";
-    if ($check_file_cmd_line =~ m/^FOUND/)
-    #if ($check_file_cmd_line =~ m/.*$file_name$/)
-    {
-      #print "$check_file_cmd_line\n";
-      script_logger($date_and_time, $logfilename_with_path, "$node_name\:\:file_existance_in_path\(\)::Information::$file_name FOUND!");
-      $file_exists_in_path = '0';
-      last;
-    }
-  }
-  #Log when file is not found
-  if ($file_exists_in_path eq "1")
-  {
-    script_logger($date_and_time, $logfilename_with_path, "$node_name\:\:file_existance_in_path\(\)::Information::$file_name NOT FOUND!");
-  }
-  return $file_exists_in_path;
 }
 
 #v1.1: removed log of errors within sub to just use return codes
